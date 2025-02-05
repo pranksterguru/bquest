@@ -5,7 +5,6 @@ import concurrent.futures
 import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_sock import Sock
 from sklearn.metrics import classification_report, confusion_matrix
 from werkzeug.utils import secure_filename
 
@@ -15,7 +14,6 @@ logging.basicConfig(filename="lex_accuracy.log", level=logging.INFO, format="%(a
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend access
-sock = Sock(app)  # WebSocket support
 
 # AWS Lex Bot Details (Modify these)
 BOT_NAME = 'YourLexBot'
@@ -29,27 +27,6 @@ client = boto3.client('lex-runtime')
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-# WebSocket clients list
-clients = []
-
-@sock.route('/ws')
-def websocket(ws):
-    """Handle WebSocket connections and add them to the client list."""
-    clients.append(ws)
-    try:
-        while True:
-            ws.receive()
-    except:
-        clients.remove(ws)
-
-def send_to_clients(data):
-    """Send progress updates to all connected WebSocket clients."""
-    for client in clients:
-        try:
-            client.send(data)
-        except:
-            clients.remove(client)
 
 def test_utterance(utterance, expected_intent):
     """Send an utterance to AWS Lex and validate the response."""
@@ -84,7 +61,7 @@ def upload_files():
 
 @app.route('/start_test', methods=['POST'])
 def start_test():
-    """Run Lex test asynchronously and send real-time updates via WebSockets."""
+    """Runs the Lex test and returns the final result."""
     selected_files = request.json.get("files", [])
     if not selected_files:
         return jsonify({"error": "No files selected"}), 400
@@ -106,15 +83,12 @@ def start_test():
 
     test_data = pd.concat(data, ignore_index=True)
 
+    # Process Lex queries
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(test_utterance, row['utterance'], row['expected_intent']): row for _, row in test_data.iterrows()}
         
         for future in concurrent.futures.as_completed(futures):
-            result = future.result()
-            results.append(result)
-
-            # Send real-time updates to WebSocket clients
-            send_to_clients(f"{result[0]},{result[1]},{result[2]}")
+            results.append(future.result())
 
     # Convert results to DataFrame
     results_df = pd.DataFrame(results, columns=['expected_intent', 'detected_intent', 'confidence'])
@@ -133,7 +107,6 @@ def start_test():
         "confusion_matrix": conf_matrix,
         "classification_report": class_report
     })
-
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
