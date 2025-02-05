@@ -1,0 +1,37 @@
+version: 1
+disable_existing_loggers: False  # Ensure existing loggers are not disabled
+formatters:
+  simple:
+    format: '%(asctime)s - %(levelname)-8s - %(funcName)-30s - %(lineno)-5d -  %(threadName)-10s - %(message)s'
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: simple
+    level: INFO
+    stream: ext://sys.stdout  # Prints to console
+
+  file:
+    class: logging.handlers.TimedRotatingFileHandler
+    formatter: simple
+    level: DEBUG
+    filename: ./logs/myapp.log  # Path to the log file
+    when: midnight            # Log rotation schedule (rotate at midnight)
+    interval: 1               # Rotate the log file every day
+    backupCount: 7            # Keep 7 backup files
+    encoding: utf8
+
+loggers:
+  my_logger:
+    level: DEBUG
+    handlers: []  # No handlers here, let the root logger handle it
+    propagate: yes  # Pass log messages to the root logger
+  
+  werkzeug:
+    level: WARNING  # Suppress Werkzeug logs below WARNING level
+    handlers: []  # Inherit handlers from root if propagate is yes
+    propagate: yes
+
+root:
+  level: DEBUG
+  handlers: [console, file]  # Root logger handles console and file output
