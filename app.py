@@ -44,8 +44,11 @@ def upload_files():
     for file in files:
         intent_name = file.filename.rsplit('.', 1)[0]  # Extract intent name from filename
         df = pd.read_csv(StringIO(file.stream.read().decode("utf-8")))
-        df['expected_intent'] = intent_name
-        uploaded_files[intent_name] = df  # Store in memory
+
+        if "utterance" not in df.columns:
+            return jsonify({"error": f"File {file.filename} must contain an 'utterance' column"}), 400
+
+        uploaded_files[intent_name] = df  # Store in-memory
 
     return jsonify({"message": "Files uploaded successfully", "files": list(uploaded_files.keys())})
 
@@ -55,10 +58,14 @@ def start_test():
         return jsonify({"error": "No files uploaded"}), 400
 
     results = []
-    test_data = pd.concat(uploaded_files.values(), ignore_index=True)
+    test_data = []
+
+    for intent_name, df in uploaded_files.items():
+        for _, row in df.iterrows():
+            test_data.append((row["utterance"], intent_name))  # Store utterance + expected intent
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(test_utterance, row['utterance'], row['expected_intent']): row for _, row in test_data.iterrows()}
+        futures = {executor.submit(test_utterance, utterance, intent): (utterance, intent) for utterance, intent in test_data}
         
         for future in concurrent.futures.as_completed(futures):
             results.append(future.result())
